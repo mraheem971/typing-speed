@@ -15,11 +15,11 @@ const WORD_LIST = [
 const views = {
     standard: document.getElementById('typing-view'),
     sprint: document.getElementById('typing-view'),
-    wordfall: document.getElementById('wordfall-view')
+    wordfall: document.getElementById('wordfall-view'),
+    learn: document.getElementById('learn-view')
 };
 const navBtns = document.querySelectorAll('.nav-btn');
 const soundToggle = document.getElementById('sound-toggle');
-const themeToggle = document.getElementById('theme-toggle');
 const wordsContainer = document.getElementById('words');
 const typingInput = document.getElementById('typing-input');
 const wpmDisplay = document.getElementById('wpm');
@@ -113,22 +113,6 @@ soundToggle.addEventListener('click', () => {
     soundToggle.innerHTML = soundEnabled ? '<i class="fa-solid fa-volume-high"></i>' : '<i class="fa-solid fa-volume-xmark"></i>';
 });
 
-// Theme initialization
-let currentTheme = localStorage.getItem('theme') || 'dark';
-if (currentTheme === 'light') document.body.setAttribute('data-theme', 'light');
-themeToggle.innerHTML = currentTheme === 'dark' ? '<i class="fa-solid fa-moon"></i>' : '<i class="fa-solid fa-sun"></i>';
-
-themeToggle.addEventListener('click', () => {
-    currentTheme = currentTheme === 'dark' ? 'light' : 'dark';
-    if (currentTheme === 'light') {
-        document.body.setAttribute('data-theme', 'light');
-    } else {
-        document.body.removeAttribute('data-theme');
-    }
-    localStorage.setItem('theme', currentTheme);
-    themeToggle.innerHTML = currentTheme === 'dark' ? '<i class="fa-solid fa-moon"></i>' : '<i class="fa-solid fa-sun"></i>';
-});
-
 // Navigation
 navBtns.forEach(btn => {
     btn.addEventListener('click', () => {
@@ -151,6 +135,9 @@ function switchMode(mode) {
     } else if (mode === 'wordfall') {
         views.wordfall.classList.add('active');
         initWordfall();
+    } else if (mode === 'learn') {
+        views.learn.classList.add('active');
+        if (typeof initLearn === 'function') initLearn();
     }
 }
 
@@ -603,3 +590,139 @@ wordfallInput.addEventListener('input', (e) => {
 
 // Initialize first view
 initTest();
+
+// ----------------------------------------------------
+// Learn Mode Logic
+// ----------------------------------------------------
+const lessonSelect = document.getElementById('lesson-select');
+const learnWordsContainer = document.getElementById('learn-words');
+const learnInput = document.getElementById('learn-input');
+const learnAccuracy = document.getElementById('learn-accuracy');
+const learnProgress = document.getElementById('learn-progress');
+const keyboardKeys = document.querySelectorAll('.key');
+
+const LESSONS = [
+    { name: 'Home Row', text: 'asdf jkl; asdf jkl; fdsa ;lkj asdf jkl;' },
+    { name: 'Top Row', text: 'qwer uiop qwer uiop rewq poiu qwer uiop' },
+    { name: 'Bottom Row', text: 'zxcv m,./ zxcv m,./ vcxz /.,m zxcv m,./' },
+    { name: 'Numbers', text: '1234 7890 1234 7890 4321 0987 1234 7890' }
+];
+
+let learnCurrentIndex = 0;
+let learnErrors = 0;
+let learnText = '';
+
+function initLearn() {
+    learnCurrentIndex = 0;
+    learnErrors = 0;
+    
+    const lessonIdx = parseInt(lessonSelect.value) || 0;
+    learnText = LESSONS[lessonIdx].text;
+    
+    learnAccuracy.innerText = '100%';
+    learnProgress.innerText = '0%';
+    
+    renderLearnText();
+    highlightNextKey();
+    
+    learnInput.value = '';
+    learnInput.focus();
+}
+
+function renderLearnText() {
+    learnWordsContainer.innerHTML = '';
+    learnText.split('').forEach((char, i) => {
+        const span = document.createElement('span');
+        span.innerText = char;
+        span.classList.add('letter');
+        if (i === 0) span.classList.add('active-letter');
+        learnWordsContainer.appendChild(span);
+    });
+}
+
+function highlightNextKey() {
+    keyboardKeys.forEach(k => k.classList.remove('highlight'));
+    if (learnCurrentIndex < learnText.length) {
+        const nextChar = learnText[learnCurrentIndex];
+        const keyEl = Array.from(keyboardKeys).find(k => k.dataset.key === nextChar.toLowerCase());
+        if (keyEl) keyEl.classList.add('highlight');
+    }
+}
+
+if(lessonSelect) lessonSelect.addEventListener('change', initLearn);
+
+const learnView = document.getElementById('learn-view');
+if(learnView) {
+    learnView.addEventListener('click', () => {
+        if(learnInput) learnInput.focus();
+    });
+}
+
+if(learnInput) {
+    learnInput.addEventListener('input', (e) => {
+        if (currentMode !== 'learn') return;
+        
+        const typed = learnInput.value;
+        const lastChar = typed.slice(-1);
+        const isBackspace = e.inputType === 'deleteContentBackward';
+        
+        const letterEls = learnWordsContainer.children;
+        
+        if (isBackspace) {
+            playClickSound();
+            if (learnCurrentIndex > 0) {
+                learnCurrentIndex--;
+                letterEls[learnCurrentIndex].classList.remove('correct', 'incorrect');
+                updateLearnActiveLetter(letterEls, learnCurrentIndex);
+                highlightNextKey();
+            }
+            return;
+        }
+        
+        if (learnCurrentIndex < learnText.length) {
+            const expected = learnText[learnCurrentIndex];
+            
+            // Visual key press on virtual keyboard
+            const keyEl = Array.from(keyboardKeys).find(k => k.dataset.key === lastChar.toLowerCase());
+            if (keyEl) {
+                keyEl.classList.add('active-press');
+                setTimeout(() => keyEl.classList.remove('active-press'), 100);
+            }
+            
+            if (lastChar === expected) {
+                letterEls[learnCurrentIndex].classList.add('correct');
+                playClickSound();
+            } else {
+                letterEls[learnCurrentIndex].classList.add('incorrect');
+                learnErrors++;
+                playErrorSound();
+            }
+            
+            learnCurrentIndex++;
+            updateLearnActiveLetter(letterEls, learnCurrentIndex);
+            highlightNextKey();
+            
+            // Update stats
+            const progress = Math.round((learnCurrentIndex / learnText.length) * 100);
+            learnProgress.innerText = progress + '%';
+            
+            const accuracy = learnCurrentIndex === 0 ? 100 : Math.round(((learnCurrentIndex - learnErrors) / learnCurrentIndex) * 100);
+            learnAccuracy.innerText = Math.max(0, accuracy) + '%';
+            
+            if (learnCurrentIndex >= learnText.length) {
+                // Lesson Complete
+                setTimeout(() => {
+                    alert('Lesson Complete! Accuracy: ' + Math.max(0, accuracy) + '%');
+                    initLearn();
+                }, 100);
+            }
+        }
+    });
+}
+
+function updateLearnActiveLetter(els, idx) {
+    Array.from(els).forEach(l => l.classList.remove('active-letter'));
+    if (idx < els.length) {
+        els[idx].classList.add('active-letter');
+    }
+}
